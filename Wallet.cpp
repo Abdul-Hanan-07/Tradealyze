@@ -50,7 +50,7 @@ bool Wallet::removeCurrency(std::string type, double amount)
      else { // is there - do we have enough 
         if(containsCurrency(type, amount))
         {
-            std::cout<<"Removing "<<type <<" : "<<amount<<std::endl;
+           // std::cout<<"Removing "<<type <<" : "<<amount<<std::endl;
             currencies[type] -= amount;
             return true;
         }

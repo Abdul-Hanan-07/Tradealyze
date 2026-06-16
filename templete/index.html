@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tradealyze Terminal</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<nav class="top-nav">
+  <div class="nav-brand">
+    <div class="nav-logo">T.A</div>
+    <div>
+      <div class="nav-title">Tradealyze</div>
+      <div class="nav-subtitle">C++ Backend Simulator</div>
+    </div>
+  </div>
+
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="switchView('dashboard')"><span class="tab-icon">⬛</span> Dashboard</button>
+    <button class="nav-tab" onclick="switchView('markets')"><span class="tab-icon">◈</span> Markets</button>
+    <button class="nav-tab" onclick="switchView('manual')"><span class="tab-icon">⊕</span> User Manual</button>
+  </div>
+
+  <div class="nav-right">
+    <div class="wallet-bar">
+      <div class="status-dot" title="Data feed active"></div>
+      <div class="wallet-chip"><span class="wallet-symbol">BTC</span><span class="wallet-amount" id="bal-btc">0.00000</span></div>
+      <div class="wallet-chip"><span class="wallet-symbol">ETH</span><span class="wallet-amount" id="bal-eth">0.00000</span></div>
+      <div class="wallet-chip"><span class="wallet-symbol">USDT</span><span class="wallet-amount" id="bal-usdt">0.00</span></div>
+    </div>
+    <span class="nav-tag" id="conn-status">○ DISCONNECTED</span>
+    <span class="nav-tag" id="sim-time">SIM T+0</span>
+  </div>
+</nav>
+
+<div class="view active" id="view-dashboard">
+  <div class="dash-layout">
+    <div class="dash-main">
+
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Order Book</span>
+          <span class="panel-badge badge-live">LIVE</span>
+        </div>
+        <div class="ob-cols">
+          <span class="ob-col-header">Price</span>
+          <span class="ob-col-header" style="text-align:right">Amount</span>
+          <span class="ob-col-header" style="text-align:right">Total</span>
+        </div>
+        <div class="ob-section" style="flex:1;overflow:hidden;">
+          <div class="ob-label">Asks (Sell)</div>
+          <div class="ob-rows-wrap" id="asks-list"></div>
+        </div>
+        <div class="spread-row">
+          <span class="spread-label">Spread</span>
+          <span class="spread-val" id="spread-val">0.00042</span>
+          <span class="spread-pct" id="spread-pct">(0.012%)</span>
+        </div>
+        <div class="ob-section" style="flex:1;overflow:hidden;">
+          <div class="ob-label">Bids (Buy)</div>
+          <div class="ob-rows-wrap" id="bids-list"></div>
+        </div>
+      </div>
+
+      <div class="panel center-panel">
+        <div class="ticker-bar">
+          <div style="display:flex;align-items:baseline;gap:10px">
+            <span class="ticker-pair" id="ticker-pair">ETH/BTC</span>
+            <span class="ticker-price" id="ticker-price">0.03421</span>
+            <span class="ticker-change tick-up" id="ticker-change">+1.24%</span>
+          </div>
+          <div class="tick-stat"><span class="tick-stat-label">24h High</span><span class="tick-stat-val" id="t-high">0.03490</span></div>
+          <div class="tick-stat"><span class="tick-stat-label">24h Low</span><span class="tick-stat-val" id="t-low">0.03318</span></div>
+          <div class="tick-stat"><span class="tick-stat-label">24h Vol</span><span class="tick-stat-val" id="t-vol">1,284 ETH</span></div>
+          <div class="tick-stat"><span class="tick-stat-label">Last Trade</span><span class="tick-stat-val" id="t-last">0.03421</span></div>
+        </div>
+        <div class="chart-area">
+          <svg class="chart-grid" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <defs>
+              <pattern id="grid" width="40" height="30" patternUnits="userSpaceOnUse">
+                <path d="M 40 0 L 0 0 0 30" fill="none" stroke="#1e2d45" stroke-width="0.5"/>
+              </pattern>
+              <linearGradient id="line-grad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#00c896" stop-opacity="0.18"/>
+                <stop offset="100%" stop-color="#00c896" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <rect width="100%" height="100%" fill="url(#grid)"/>
+            <polyline id="price-fill" points="" fill="url(#line-grad)" stroke="none"/>
+            <polyline id="price-line" points="" fill="none" stroke="#00c896" stroke-width="1.5" stroke-linejoin="round"/>
+          </svg>
+          <div class="chart-hint">Simulated Live Feed</div>
+        </div>
+      </div>
+
+      <div class="panel order-panel">
+        <div class="panel-header">
+          <span class="panel-title">Place Order</span>
+          <span class="panel-badge badge-pair" id="form-pair-badge">ETH/BTC</span>
+        </div>
+        <div class="toggle-row">
+          <button class="toggle-btn active-buy" id="btn-buy" onclick="setOrderSide('buy')">▲ Buy / Bid</button>
+          <button class="toggle-btn" id="btn-sell" onclick="setOrderSide('sell')">▼ Sell / Ask</button>
+        </div>
+        <div class="order-form">
+          <div class="form-group">
+            <label class="form-label">Order Type</label>
+            <div class="order-type-row">
+              <button class="type-chip active" id="type-limit" onclick="setOrderType('limit')">Limit</button>
+              <button class="type-chip" id="type-market" onclick="setOrderType('market')">Market</button>
+              <button class="type-chip" id="type-stop" onclick="setOrderType('stop')">Stop</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Product</label>
+            <input class="form-input" id="input-product" type="text" value="ETH/BTC" oninput="updateFormBadge()"/>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label class="form-label">Price</label>
+              <input class="form-input" id="input-price" type="number" placeholder="0.03421" step="0.00001" oninput="calcTotal()"/>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Amount</label>
+              <input class="form-input" id="input-amount" type="number" placeholder="1.0000" step="0.0001" oninput="calcTotal()"/>
+            </div>
+          </div>
+          <div class="avail-row">
+            <span class="avail-label" id="avail-label">Available</span>
+            <span class="avail-val" id="avail-val">Check Balance</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Quick Fill</label>
+            <div class="pct-row">
+              <button class="pct-btn" onclick="fillPct(25)">25%</button>
+              <button class="pct-btn" onclick="fillPct(50)">50%</button>
+              <button class="pct-btn" onclick="fillPct(75)">75%</button>
+              <button class="pct-btn" onclick="fillPct(100)">Max</button>
+            </div>
+          </div>
+          <div class="total-row">
+            <span class="total-label">Estimated Total</span>
+            <span class="total-val" id="est-total">— BTC</span>
+          </div>
+          <button class="submit-btn submit-buy" id="submit-btn" onclick="submitOrder()">Place Buy Order</button>
+          <div id="order-feedback" style="font-size:11px;text-align:center;min-height:15px;color:var(--text-secondary)"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="dash-bottom">
+      <div class="history-panel panel">
+        <div class="panel-header">
+          <span class="panel-title">Recent Transactions</span>
+          <div class="ministat">
+            <div><div class="ministat-label">Session Trades</div><div class="ministat-val" id="session-trades">0</div></div>
+            <div><div class="ministat-label">Session Vol</div><div class="ministat-val" id="session-vol">0.00000</div></div>
+          </div>
+        </div>
+        <table class="history-table">
+          <thead><tr>
+            <th>Time</th><th>Side</th><th>Product</th>
+            <th>Price</th><th>Amount</th><th>Total</th><th>Status</th>
+          </tr></thead>
+          <tbody id="tx-body"></tbody>
+        </table>
+        <div class="history-footer">
+          <div class="tf-display">Timeframe: <span id="tf-label">T+0 (Genesis)</span></div>
+          
+          <div style="display: flex; gap: 10px;">
+            <button class="tf-btn" onclick="nextTimeframe()">Next Timeframe →</button>
+            <button class="tf-btn" id="autoplay-btn" onclick="toggleAutoPlay()">▶ Auto-Play</button>
+          </div>
+          </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="view" id="view-markets" style="flex-direction:column;">
+  <div class="markets-header">
+    <div class="markets-title-row">
+      <span class="markets-h1">Markets</span>
+      <span class="markets-live-pill">● LIVE</span>
+    </div>
+    <div class="markets-subtitle">All available trading pairs — click Trade Now to jump to the dashboard.</div>
+  </div>
+  <div class="markets-filters">
+    <button class="filter-chip active" onclick="filterMarkets('all', this)">All</button>
+    <button class="filter-chip" onclick="filterMarkets('BTC', this)">BTC Pairs</button>
+    <button class="filter-chip" onclick="filterMarkets('ETH', this)">ETH Pairs</button>
+    <button class="filter-chip" onclick="filterMarkets('USDT', this)">USDT Pairs</button>
+    <input class="market-search" id="market-search" type="text" placeholder="Search pair…" oninput="filterMarkets(currentFilter, null)"/>
+  </div>
+  <div class="markets-table-wrap">
+    <table class="markets-table">
+      <thead>
+        <tr>
+          <th onclick="sortMarkets('pair')" class="sort-active"># Pair</th>
+          <th onclick="sortMarkets('price')">Price</th>
+          <th onclick="sortMarkets('change')">24h Change</th>
+          <th onclick="sortMarkets('high')">24h High</th>
+          <th onclick="sortMarkets('low')">24h Low</th>
+          <th onclick="sortMarkets('volume')">24h Volume</th>
+          <th>Trend</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="markets-body"></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="view" id="view-manual" style="flex-direction:column;">
+  <div class="manual-hero">
+    <div class="manual-eyebrow">Documentation</div>
+    <div class="manual-h1">Tradealyze User Manual</div>
+    <div class="manual-lead">A complete guide to the Tradealyze Terminal — from placing your first order to understanding order book depth and managing your session.</div>
+  </div>
+  <div class="manual-body">
+    <nav class="manual-toc">
+      <div class="toc-label">Contents</div>
+      <a class="toc-item active" onclick="scrollToSection('intro')">Introduction</a>
+      <a class="toc-item" onclick="scrollToSection('overview')">Platform Overview</a>
+      <a class="toc-item" onclick="scrollToSection('orderbook')">Order Book</a>
+      <a class="toc-item" onclick="scrollToSection('placing')">Placing Orders</a>
+      <a class="toc-item" onclick="scrollToSection('types')">Order Types</a>
+      <div class="toc-divider"></div>
+      <a class="toc-item" onclick="scrollToSection('markets')">Markets View</a>
+      <a class="toc-item" onclick="scrollToSection('history')">Transaction History</a>
+      <a class="toc-item" onclick="scrollToSection('ws')">Backend Connection</a>
+      <a class="toc-item" onclick="scrollToSection('glossary')">Glossary</a>
+    </nav>
+    <div class="manual-content" id="manual-content">
+
+      <div class="manual-section" id="sec-intro">
+        <div class="section-number">01 — Introduction</div>
+        <div class="section-title">Welcome to Tradealyze Terminal</div>
+        <div class="section-body">
+          <p>Tradealyze Terminal is a real-time trading simulator powered by a C++ matching engine communicating over WebSockets. It replicates the interface and workflow of professional crypto exchanges, letting you practice strategies, test backend logic, and observe live market mechanics — all without real funds.</p>
+          <p>This manual covers every panel of the interface. Whether you're new to trading or setting up the backend engine, you'll find the relevant section below.</p>
+          <div class="callout callout-info">ℹ️ This is a simulator. No real cryptocurrency is traded or held. Balances and prices are generated by the connected C++ backend.</div>
+        </div>
+      </div>
+
+      <div class="manual-section" id="sec-overview">
+        <div class="section-number">02 — Platform Overview</div>
+        <div class="section-title">Navigating the Interface</div>
+        <div class="section-body">
+          <p>The terminal is organized as a Single Page Application with three main views, accessible from the top navigation bar.</p>
+          <div class="info-cards">
+            <div class="info-card"><div class="info-card-icon">⬛</div><div class="info-card-title">Dashboard</div><div class="info-card-body">The primary trading screen. Shows the live order book, price chart, order entry form, and transaction history.</div></div>
+            <div class="info-card"><div class="info-card-icon">◈</div><div class="info-card-title">Markets</div><div class="info-card-body">A sortable table of all available trading pairs with live prices and 24-hour statistics. Click Trade Now to load any pair into the dashboard.</div></div>
+            <div class="info-card"><div class="info-card-icon">⊕</div><div class="info-card-title">User Manual</div><div class="info-card-body">This documentation screen. Use the sidebar to jump between sections.</div></div>
+            <div class="info-card"><div class="info-card-icon">💼</div><div class="info-card-title">Wallet Bar</div><div class="info-card-body">Live BTC, ETH, and USDT balances pushed directly from the C++ engine. Always visible in the top-right corner.</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="manual-section" id="sec-orderbook">
+        <div class="section-number">03 — Order Book</div>
+        <div class="section-title">Reading the Order Book</div>
+        <div class="section-body">
+          <p>The order book is a live list of all pending buy (bid) and sell (ask) orders in the market. It sits in the left column of the Dashboard.</p>
+          <div class="accordion">
+            <div class="acc-item open">
+              <button class="acc-trigger" onclick="toggleAcc(this)"><span>Asks (Sell orders)</span><span class="acc-arrow">▼</span></button>
+              <div class="acc-body">These are offers from sellers. They are shown in <strong style="color:var(--red)">red</strong>. The lowest ask is the cheapest price at which someone is currently willing to sell. Orders are sorted so the cheapest ask is closest to the spread.</div>
+            </div>
+            <div class="acc-item">
+              <button class="acc-trigger" onclick="toggleAcc(this)"><span>Bids (Buy orders)</span><span class="acc-arrow">▼</span></button>
+              <div class="acc-body">These are offers from buyers. Shown in <strong style="color:var(--green)">green</strong>. The highest bid is the best price a buyer is willing to pay. The depth bar behind each row shows its relative size compared to the total visible liquidity.</div>
+            </div>
+            <div class="acc-item">
+              <button class="acc-trigger" onclick="toggleAcc(this)"><span>The Spread</span><span class="acc-arrow">▼</span></button>
+              <div class="acc-body">The spread is the gap between the lowest ask and the highest bid. A tighter spread means a more liquid market. A wider spread means less liquidity and potentially higher cost to trade. The spread is shown between the two sides, highlighted in amber.</div>
+            </div>
+            <div class="acc-item">
+              <button class="acc-trigger" onclick="toggleAcc(this)"><span>Total column</span><span class="acc-arrow">▼</span></button>
+              <div class="acc-body">The "Total" column shows the cumulative amount of the asset available from that price level inward (toward the spread). It helps you understand how much liquidity exists at each price level.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="manual-section" id="sec-placing">
+        <div class="section-number">04 — Placing Orders</div>
+        <div class="section-title">How to Place an Order</div>
+        <div class="section-body">
+          <p>The order entry form is in the right column of the Dashboard. Follow these steps to place your first simulated trade.</p>
+          <div class="step-list">
+            <div class="step"><div class="step-num">1</div><div class="step-text"><strong>Choose a side</strong> — Click <strong style="color:var(--green)">Buy / Bid</strong> if you want to purchase the asset, or <strong style="color:var(--red)">Sell / Ask</strong> if you want to sell it.</div></div>
+            <div class="step"><div class="step-num">2</div><div class="step-text"><strong>Select an order type</strong> — Limit, Market, or Stop (see the Order Types section for details).</div></div>
+            <div class="step"><div class="step-num">3</div><div class="step-text"><strong>Set your product</strong> — Type the trading pair you want, e.g. <code style="font-family:var(--text-mono);color:var(--blue)">ETH/BTC</code>. You can also click Trade Now in the Markets view to pre-fill this.</div></div>
+            <div class="step"><div class="step-num">4</div><div class="step-text"><strong>Enter price and amount</strong> — Price is denominated in the quote currency (e.g. BTC). Amount is in the base currency (e.g. ETH). The Estimated Total updates automatically.</div></div>
+            <div class="step"><div class="step-num">5</div><div class="step-text"><strong>Use Quick Fill (optional)</strong> — The 25% / 50% / 75% / Max buttons calculate an amount based on your available balance.</div></div>
+            <div class="step"><div class="step-num">6</div><div class="step-text"><strong>Submit</strong> — Click the Place Order button. The order is sent to the C++ backend via WebSocket. A confirmation appears below the button, and the trade appears in the Transaction History panel.</div></div>
+          </div>
+          <div class="callout">⚠️ If the WebSocket is not connected, orders will not be forwarded to the backend engine. Watch the connection status in the top-right corner.</div>
+        </div>
+      </div>
+
+      <div class="manual-section" id="sec-types">
+        <div class="section-number">05 — Order Types</div>
+        <div class="section-title">Limit, Market, and Stop Orders</div>
+        <div class="section-body">
+          <div class="accordion">
+            <div class="acc-item open">
+              <button class="acc-trigger" onclick="toggleAcc(this)"><span>Limit Order</span><span class="acc-arrow">▼</span></button>
+              <div class="acc-body">You specify the exact price you want to pay or receive. The order will only execute if the market reaches your price. Limit orders give you price control but are not guaranteed to fill. <strong>Best for:</strong> entering at a specific price level you've identified.</div>
+            </div>
+            <div class="acc-item">
+              <button class="acc-trigger" onclick="toggleAcc(this)"><span>Market Order</span><span class="acc-arrow">▼</span></button>
+              <div class="acc-body">Executes immediately at the best available price in the order book. The price field is disabled — the backend will match you against the top ask (if buying) or top bid (if selling). <strong>Best for:</strong> entering or exiting a position quickly when speed matters more than price.</div>
+            </div>
+            <div class="acc-item">
+              <button class="acc-trigger" onclick="toggleAcc(this)"><span>Stop Order</span><span class="acc-arrow">▼</span></button>
+              <div class="acc-body">A stop order becomes a market order once the price crosses a trigger level you specify. It is used to limit losses (stop-loss) or lock in profit (take-profit). The price field is your trigger price. <strong>Best for:</strong> automated risk management without needing to watch the screen.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="manual-section" id="sec-markets">
+        <div class="section-number">06 — Markets View</div>
+        <div class="section-title">Browsing Trading Pairs</div>
+        <div class="section-body">
+          <p>The Markets view displays every trading pair loaded from the C++ backend, with live prices, 24-hour statistics, and sparkline trend charts.</p>
+          <p>Use the <strong>filter chips</strong> (All, BTC Pairs, ETH Pairs, USDT Pairs) to narrow the list by quote currency. Use the <strong>search box</strong> to find a specific pair by name. Click any column header to sort by that metric.</p>
+          <p>Clicking <strong>Trade Now</strong> on any row switches you to the Dashboard and pre-fills the product field with that pair, so you can begin trading immediately.</p>
+          <div class="callout callout-info">ℹ️ Developers: call <code style="font-family:var(--text-mono)">updateMarkets(productsArray)</code> from your WebSocket handler to populate this table with live data from the C++ engine.</div>
+        </div>
+      </div>
+
+      <div class="manual-section" id="sec-history">
+        <div class="section-number">07 — Transaction History</div>
+        <div class="section-title">Reviewing Your Trades</div>
+        <div class="section-body">
+          <p>The Transaction History table at the bottom of the Dashboard records every order submitted during your session. Columns show the time, side (BUY/SELL), product, execution price, amount, total cost, and status.</p>
+          <p>The <strong>Next Timeframe</strong> button sends an advance-timeframe signal to the C++ engine, progressing the simulator from T+0 (Genesis) through morning, midday, afternoon, and after-hours sessions. Session statistics (total trades and volume) are tracked in the panel header.</p>
+        </div>
+      </div>
+
+      <div class="manual-section" id="sec-ws">
+        <div class="section-number">08 — Backend Connection</div>
+        <div class="section-title">WebSocket & C++ Integration</div>
+        <div class="section-body">
+          <p>The terminal connects to the C++ engine at <code style="font-family:var(--text-mono);color:var(--blue)">ws://localhost:9002</code> on load. The connection status is displayed in the top-right corner of the navigation bar.</p>
+          <div class="accordion">
+            <div class="acc-item open">
+              <button class="acc-trigger" onclick="toggleAcc(this)"><span>Messages the backend can send</span><span class="acc-arrow">▼</span></button>
+              <div class="acc-body" style="font-family:var(--text-mono);font-size:11.5px;line-height:2">
+                <div><strong style="color:var(--blue)">{ type: "balances", btc, eth, usdt }</strong> — Update wallet balances</div>
+                <div><strong style="color:var(--blue)">{ type: "orderbook", asks, bids }</strong> — Push a new order book snapshot</div>
+                <div><strong style="color:var(--blue)">{ type: "trade", tx }</strong> — Push a completed trade to transaction history</div>
+                <div><strong style="color:var(--blue)">{ type: "chart", points }</strong> — Push price series [{x, y}] for the chart</div>
+              </div>
+            </div>
+            <div class="acc-item">
+              <button class="acc-trigger" onclick="toggleAcc(this)"><span>Messages sent to the backend</span><span class="acc-arrow">▼</span></button>
+              <div class="acc-body" style="font-family:var(--text-mono);font-size:11.5px;line-height:2">
+                <div><strong style="color:var(--green)">{ action: "submit_order", side, product, price, amount, orderType }</strong></div>
+                <div><strong style="color:var(--green)">{ action: "next_timeframe" }</strong></div>
+              </div>
+            </div>
+          </div>
+          <div class="callout">⚠️ Ensure the C++ server is running on port 9002 before opening the terminal. The UI will continue to run with simulated data even when disconnected, but orders will not be processed.</div>
+        </div>
+      </div>
+
+      <div class="manual-section" id="sec-glossary">
+        <div class="section-number">09 — Glossary</div>
+        <div class="section-title">Key Terms</div>
+        <div class="section-body">
+          <div class="accordion">
+            <div class="acc-item"><button class="acc-trigger" onclick="toggleAcc(this)"><span>Ask / Offer</span><span class="acc-arrow">▼</span></button><div class="acc-body">The lowest price at which a seller is currently willing to sell. Buying at market will fill against the best ask.</div></div>
+            <div class="acc-item"><button class="acc-trigger" onclick="toggleAcc(this)"><span>Bid</span><span class="acc-arrow">▼</span></button><div class="acc-body">The highest price at which a buyer is currently willing to buy. Selling at market will fill against the best bid.</div></div>
+            <div class="acc-item"><button class="acc-trigger" onclick="toggleAcc(this)"><span>Spread</span><span class="acc-arrow">▼</span></button><div class="acc-body">The difference between the best ask and the best bid. Represents the cost of immediately entering and exiting a position.</div></div>
+            <div class="acc-item"><button class="acc-trigger" onclick="toggleAcc(this)"><span>Liquidity</span><span class="acc-arrow">▼</span></button><div class="acc-body">How much volume can be traded at or near the current price without causing large price movements. Deep order books indicate high liquidity.</div></div>
+            <div class="acc-item"><button class="acc-trigger" onclick="toggleAcc(this)"><span>Matching Engine</span><span class="acc-arrow">▼</span></button><div class="acc-body">The C++ backend component that matches incoming buy and sell orders, executes trades, and maintains the order book state.</div></div>
+            <div class="acc-item"><button class="acc-trigger" onclick="toggleAcc(this)"><span>Base / Quote Currency</span><span class="acc-arrow">▼</span></button><div class="acc-body">In a pair like ETH/BTC, ETH is the base currency (what you're buying or selling) and BTC is the quote currency (what you're paying with).</div></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
