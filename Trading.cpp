@@ -52,9 +52,6 @@ int main() {
             try {
                 auto msg = json::parse(data);
 
-                // =========================================================================
-                // FIX: NEW MARKET CHANGING LOGIC
-                // =========================================================================
                 if (msg["action"] == "change_market") {
                     std::string new_product = msg["product"];
                     std::cout << "Market changed by UI to: " << new_product << std::endl;
@@ -106,7 +103,6 @@ int main() {
                         std::cout << "Warning: No CSV data found for " << new_product << " at this time." << std::endl;
                     }
                 }
-                // =========================================================================
 
                 if (msg["action"] == "submit_order") {
                     std::string side = msg["side"];
