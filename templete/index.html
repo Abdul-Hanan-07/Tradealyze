@@ -159,13 +159,16 @@
             <div><div class="ministat-label">Session Vol</div><div class="ministat-val" id="session-vol">0.00000</div></div>
           </div>
         </div>
-        <table class="history-table">
-          <thead><tr>
-            <th>Time</th><th>Side</th><th>Product</th>
-            <th>Price</th><th>Amount</th><th>Total</th><th>Status</th>
-          </tr></thead>
-          <tbody id="tx-body"></tbody>
-        </table>
+        
+        <div class="tx-scroll-wrapper">
+          <table class="history-table">
+            <thead><tr>
+              <th>Time</th><th>Side</th><th>Product</th>
+              <th>Price</th><th>Amount</th><th>Total</th><th>Status</th>
+            </tr></thead>
+            <tbody id="tx-body"></tbody>
+          </table>
+        </div>
         <div class="history-footer">
           <div class="tf-display">Timeframe: <span id="tf-label">T+0 (Genesis)</span></div>
           

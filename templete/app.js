@@ -4,6 +4,9 @@ const STATE = {
   sessionTrades: 0, sessionVol: 0, simTick: 0,
   transactions: [], chartPts: [], basePrice: 0.03421,
   activeView: 'dashboard',
+  bestBid: null,   // populated by price_hint from backend
+  bestAsk: null,   // populated by price_hint from backend
+  pendingOrders: {}, // tracks optimistic orders by key so we can update their status
 };
 const TF_LABELS = ['T+0 (Genesis)','T+1 (Morning)','T+2 (Midday)','T+3 (Afternoon)','T+4 (Close)','T+5 (After Hours)'];
 
@@ -33,31 +36,27 @@ ws.onmessage = (event) => {
   try {
     const msg = JSON.parse(event.data);
     switch (msg.type) {
-      case 'balances':  updateBalances(msg); break;
-      case 'orderbook': updateOrderBook(msg.asks, msg.bids); break;
-      case 'trade':     addTransaction(msg.tx); break;
-      case 'chart':     updateChart(msg.points); break;
-      case 'products':  updateMarkets(msg.products); break;
+      case 'balances':   updateBalances(msg); break;
+      case 'orderbook':  updateOrderBook(msg.asks, msg.bids); break;
+      case 'trade':      addTransaction(msg.tx); break;
+      case 'chart':      updateChart(msg.points); break;
+      case 'products':   updateMarkets(msg.products); break;
+      case 'order_ack':  handleOrderAck(msg); break;
+      case 'price_hint':
+        STATE.bestBid = msg.best_bid;
+        STATE.bestAsk = msg.best_ask;
+        break;
     }
   } catch(e) { console.error('WS parse error', e); }
 };
 
-// ─── BACKEND HOOKS (call these from your C++ integration) ────────────────────
-
-/**
- * updateBalances({ btc, eth, usdt })
- * Called automatically from WS messages of type "balances".
- */
-function updateBalances({ btc, eth, usdt }) {
+// ─── BACKEND HOOKS ────────────────────────────────────────────────────────────
+function updateBalances({ btc, eth, usdt, avax }) {
   if (btc  !== undefined) document.getElementById('bal-btc').textContent  = parseFloat(btc).toFixed(5);
   if (eth  !== undefined) document.getElementById('bal-eth').textContent  = parseFloat(eth).toFixed(4);
   if (usdt !== undefined) document.getElementById('bal-usdt').textContent = parseFloat(usdt).toFixed(2);
 }
 
-/**
- * updateOrderBook(asks, bids)
- * asks/bids: array of { price, amount, total }
- */
 function updateOrderBook(asks, bids) {
   const maxA = asks.length ? parseFloat(asks[asks.length-1].total) : 1;
   const maxB = bids.length ? parseFloat(bids[bids.length-1].total) : 1;
@@ -77,39 +76,79 @@ function updateOrderBook(asks, bids) {
   }
 }
 
-/**
- * addTransaction(tx)
- * tx: { time, side, product, price, amount, total, status }
- */
 function addTransaction(tx) {
-  STATE.transactions.unshift(tx);
-  if (STATE.transactions.length > 50) STATE.transactions.pop();
+  const sideNorm = String(tx.side).toLowerCase();
+  const price = typeof tx.price === 'number' ? tx.price.toFixed(5) : String(tx.price);
+  const amount = typeof tx.amount === 'number' ? tx.amount.toFixed(4) : String(tx.amount);
+
+  const existing = STATE.transactions.find(t =>
+    String(t.side).toLowerCase() === sideNorm &&
+    t.product === tx.product &&
+    String(t.status) === 'Pending'
+  );
+
+  if (existing) {
+    existing.status = tx.status || 'Filled';
+    existing.price  = price;
+    existing.amount = amount;
+    existing.total  = tx.total;
+  } else {
+    STATE.transactions.unshift({ ...tx, side: sideNorm, price, amount });
+    if (STATE.transactions.length > 50) STATE.transactions.pop();
+  }
   renderTxHistory();
 }
 
-/**
- * updateChart(points)
- * points: array of { x, y } or just { y }
- */
 function updateChart(points) {
   STATE.chartPts = points;
   renderChart();
 }
 
-/**
- * updateMarkets(productsArray)
- * productsArray: array of { pair, price, change, high, low, volume, history? }
- * Call this from your WS handler when the backend sends product data.
- * Example: updateMarkets([{ pair:'ETH/BTC', price:0.0342, change:1.2, high:0.0349, low:0.0331, volume:1284 }])
- */
+function handleOrderAck(msg) {
+  const key = `${msg.side}-${msg.product}-${parseFloat(msg.price).toFixed(5)}-${parseFloat(msg.amount).toFixed(4)}`;
+  const tx = STATE.pendingOrders[key];
+  if (tx) {
+    tx.status = msg.status; 
+    delete STATE.pendingOrders[key];
+    renderTxHistory();
+  }
+  if (msg.status === 'Rejected ✗') {
+    const fb = document.getElementById('order-feedback');
+    fb.style.color = 'var(--red)';
+    fb.textContent = `✗ Order REJECTED — insufficient balance for ${msg.side.toUpperCase()} ${msg.amount} ${msg.product}`;
+    setTimeout(() => fb.textContent = '', 4000);
+  }
+}
+
 let marketsData = [];
 let currentFilter = 'all';
 let currentSort = { key: 'pair', dir: 1 };
 
+// ============================================================================
+// FIX: MERGE BACKEND PAIRS WITH UI PLACEHOLDERS SO SEARCH/TABS NEVER BREAK
+// ============================================================================
 function updateMarkets(productsArray) {
-  marketsData = productsArray;
+  if (productsArray && productsArray.length > 0 && typeof productsArray[0] === 'string') {
+    // Start with our complete layout array so all tabs work
+    let fullMarketList = [...PLACEHOLDER_MARKETS];
+    
+    // Ensure any extra custom pair from backend CSV is also appended gracefully
+    productsArray.forEach(pairString => {
+      if (!fullMarketList.some(m => m.pair === pairString)) {
+        fullMarketList.push({
+          pair: pairString,
+          base: pairString.split('/')[0],
+          price: 0, change: 0, high: 0, low: 0, volume: 0, history: []
+        });
+      }
+    });
+    marketsData = fullMarketList;
+  } else {
+    marketsData = productsArray || PLACEHOLDER_MARKETS;
+  }
   renderMarkets();
 }
+// ============================================================================
 
 // ─── SIMULATED ORDER BOOK ────────────────────────────────────────────────────
 function genOrderBook(mid) {
@@ -156,8 +195,10 @@ function renderChart() {
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   };
   const line = prices.map((v,i)=>map(v,i)).join(' ');
-  document.getElementById('price-line').setAttribute('points', line);
-  document.getElementById('price-fill').setAttribute('points', `0,${h} ${line} ${w},${h}`);
+  const priceLine = document.getElementById('price-line');
+  const priceFill = document.getElementById('price-fill');
+  if (priceLine) priceLine.setAttribute('points', line);
+  if (priceFill) priceFill.setAttribute('points', `0,${h} ${line} ${w},${h}`);
 }
 
 // ─── ORDER FORM ───────────────────────────────────────────────────────────────
@@ -168,7 +209,21 @@ function setOrderSide(side) {
   const btn = document.getElementById('submit-btn');
   btn.className = 'submit-btn ' + (side==='buy'?'submit-buy':'submit-sell');
   btn.textContent = side==='buy' ? 'Place Buy Order' : 'Place Sell Order';
-  document.getElementById('avail-label').textContent = side==='buy' ? 'Available (USDT)' : 'Available (BTC)';
+  document.getElementById('avail-label').textContent = side==='buy' ? 'Available (USDT)' : 'Available (ETH)';
+
+  if (STATE.orderType !== 'market') {
+    const priceInput = document.getElementById('input-price');
+    if (side === 'sell' && STATE.bestBid) {
+      priceInput.value = parseFloat(STATE.bestBid).toFixed(5);
+      const hint = document.getElementById('order-feedback');
+      hint.style.color = 'var(--amber)';
+      hint.textContent = `ℹ Auto-filled best bid ${parseFloat(STATE.bestBid).toFixed(5)} — your ask must be ≤ this to match`;
+      setTimeout(() => hint.textContent = '', 4000);
+    } else if (side === 'buy' && STATE.bestAsk) {
+      priceInput.value = parseFloat(STATE.bestAsk).toFixed(5);
+    }
+    calcTotal();
+  }
 }
 
 function setOrderType(type) {
@@ -186,13 +241,31 @@ function updateFormBadge() {
   const v = document.getElementById('input-product').value.trim().toUpperCase() || 'ETH/BTC';
   document.getElementById('form-pair-badge').textContent = v;
   document.getElementById('ticker-pair').textContent = v;
+
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ action: 'change_market', product: v }));
+  }
+
+  STATE.bestBid = null;
+  STATE.bestAsk = null;
+  STATE.chartPts = [];
+  document.getElementById('input-price').value = ''; 
+  document.getElementById('est-total').textContent = '—';
+  
+  document.getElementById('asks-list').innerHTML = '<div style="text-align:center; padding:10px; color:var(--text-secondary)">Loading Market Data...</div>';
+  document.getElementById('bids-list').innerHTML = '';
+  
+  const lineEl = document.getElementById('price-line');
+  const fillEl = document.getElementById('price-fill');
+  if (lineEl) lineEl.setAttribute('points', '');
+  if (fillEl) fillEl.setAttribute('points', '');
 }
 
 function calcTotal() {
   const p = parseFloat(document.getElementById('input-price').value);
   const a = parseFloat(document.getElementById('input-amount').value);
   const el = document.getElementById('est-total');
-  el.textContent = (!isNaN(p)&&!isNaN(a)&&p>0&&a>0) ? (p*a).toFixed(6)+' BTC' : '— BTC';
+  el.textContent = (!isNaN(p)&&!isNaN(a)&&p>0&&a>0) ? (p*a).toFixed(6) : '—';
 }
 
 function fillPct(pct) {
@@ -209,27 +282,51 @@ function submitOrder() {
     fb.style.color='var(--red)'; fb.textContent='⚠ Enter a valid price and amount.'; return;
   }
   const total = (priceRaw*amount).toFixed(6);
-  const tx = { time:new Date().toTimeString().slice(0,8), side:STATE.side, product, price:priceRaw.toFixed(5), amount:amount.toFixed(4), total, status:'Processing' };
+
+  const tx = { time:new Date().toTimeString().slice(0,8), side:STATE.side, product, price:priceRaw.toFixed(5), amount:amount.toFixed(4), total, status:'Pending' };
   STATE.transactions.unshift(tx);
   if (STATE.transactions.length>50) STATE.transactions.pop();
   STATE.sessionTrades++;
   STATE.sessionVol += parseFloat(total);
   document.getElementById('session-trades').textContent = STATE.sessionTrades;
   document.getElementById('session-vol').textContent = STATE.sessionVol.toFixed(5);
+
+  const key = `${STATE.side}-${product}-${priceRaw.toFixed(5)}-${amount.toFixed(4)}`;
+  STATE.pendingOrders[key] = tx;
+
   renderTxHistory();
   fb.style.color = STATE.side==='buy'?'var(--green)':'var(--red)';
-  fb.textContent = `✓ ${STATE.side.toUpperCase()} ${amount.toFixed(4)} @ ${priceRaw.toFixed(5)} → backend`;
+  fb.textContent = `✓ ${STATE.side.toUpperCase()} ${amount.toFixed(4)} @ ${priceRaw.toFixed(5)} → sent to backend`;
   if (ws.readyState===WebSocket.OPEN) {
     ws.send(JSON.stringify({ action:'submit_order', side:STATE.side, product, price:priceRaw, amount, orderType:STATE.orderType }));
+  } else {
+    tx.status = 'No Connection';
+    renderTxHistory();
   }
   setTimeout(()=>fb.textContent='', 3500);
 }
 
 // ─── TX HISTORY ───────────────────────────────────────────────────────────────
+function statusColor(status) {
+  if (!status) return 'var(--text-secondary)';
+  if (status === 'Filled')       return 'var(--green)';
+  if (status === 'Pending')      return 'var(--amber)';
+  if (status.startsWith('Rej'))  return 'var(--red)';
+  return 'var(--text-secondary)';
+}
+
 function renderTxHistory() {
   const rows = STATE.transactions.slice(0,12).map(tx => {
-    const b = tx.side==='buy';
-    return `<tr><td>${tx.time}</td><td class="${b?'td-side-buy':'td-side-sell'}">${tx.side.toUpperCase()}</td><td>${tx.product}</td><td class="${b?'td-price-up':'td-price-down'}">${tx.price}</td><td>${tx.amount}</td><td>${tx.total}</td><td style="color:var(--green)">${tx.status}</td></tr>`;
+    const b = tx.side==='buy' || tx.side==='BUY';
+    return `<tr>
+      <td>${tx.time}</td>
+      <td class="${b?'td-side-buy':'td-side-sell'}">${String(tx.side).toUpperCase()}</td>
+      <td>${tx.product}</td>
+      <td class="${b?'td-price-up':'td-price-down'}">${typeof tx.price==='number'?tx.price.toFixed(5):tx.price}</td>
+      <td>${typeof tx.amount==='number'?tx.amount.toFixed(4):tx.amount}</td>
+      <td>${typeof tx.total==='number'?tx.total.toFixed(6):tx.total}</td>
+      <td style="color:${statusColor(tx.status)}">${tx.status||'—'}</td>
+    </tr>`;
   }).join('');
   document.getElementById('tx-body').innerHTML = rows || '<tr><td colspan="7" style="color:var(--text-secondary);text-align:center;padding:16px">No transactions yet — place an order above.</td></tr>';
 }
@@ -255,7 +352,6 @@ function simTick() {
 }
 
 // ─── MARKETS TABLE ────────────────────────────────────────────────────────────
-// Placeholder data — replaced when your C++ backend sends updateMarkets()
 const PLACEHOLDER_MARKETS = [
   { pair:'ETH/BTC',  base:'Ethereum',  price:0.03421, change:+1.24, high:0.03490, low:0.03318, volume:128400, history:[0.0338,0.0334,0.0336,0.0340,0.0338,0.0342,0.0345,0.0342] },
   { pair:'DOGE/BTC', base:'Dogecoin',  price:0.000002541, change:-0.87, high:0.000002690, low:0.000002480, volume:8540000, history:[0.0000027,0.00000268,0.00000265,0.00000258,0.00000255,0.00000254,0.00000256,0.00000254] },
@@ -343,15 +439,13 @@ function sortMarkets(key) {
 
 function tradeNow(pair) {
   document.getElementById('input-product').value = pair;
-  updateFormBadge();
-  // Switch to dashboard
+  updateFormBadge(); 
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-dashboard').classList.add('active');
   document.querySelectorAll('.nav-tab').forEach((t,i)=>{ if(i===0) t.classList.add('active'); else t.classList.remove('active'); });
   STATE.activeView = 'dashboard';
 }
 
-// ─── MANUAL ACCORDION & TOC ───────────────────────────────────────────────────
 function toggleAcc(trigger) {
   trigger.parentElement.classList.toggle('open');
 }
@@ -371,14 +465,12 @@ renderMarkets();
 simTick();
 setInterval(simTick, 2500);
 
-// --- AUTO-PLAY THE SIMULATOR TIMEFRAME ---
 let autoPlayInterval = null;
 
 function toggleAutoPlay() {
     const btn = document.getElementById('autoplay-btn');
 
     if (autoPlayInterval) {
-        // Stop the simulator
         clearInterval(autoPlayInterval);
         autoPlayInterval = null;
         console.log("Simulator Paused.");
@@ -386,13 +478,11 @@ function toggleAutoPlay() {
         btn.style.backgroundColor = "transparent"; 
         btn.style.color = ""; 
     } else {
-        // Start the simulator
         console.log("Simulator Running...");
         btn.innerText = "⏸ Pause Market";
         btn.style.backgroundColor = "var(--green)"; 
         btn.style.color = "#000";
         
-        // THE FIX: Call the exact same function your manual button uses every 1 second!
         autoPlayInterval = setInterval(() => {
             nextTimeframe();
         }, 1000); 

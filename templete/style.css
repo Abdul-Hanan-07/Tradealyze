@@ -188,9 +188,33 @@
     .dash-bottom { display: grid; grid-template-columns: 1fr; gap: 1px; background: var(--border); border-top: 1px solid var(--border); flex-shrink: 0; }
     .history-panel { background: var(--bg-panel); }
     .history-table { width: 100%; border-collapse: collapse; }
-    .history-table th { font-size: 9px; font-weight: 700; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text-secondary); padding: 6px 14px; text-align: left; border-bottom: 1px solid var(--border); background: var(--bg-card); }
+    /* Bottom row */
+    .dash-bottom { display: grid; grid-template-columns: 1fr; gap: 1px; background: var(--border); border-top: 1px solid var(--border); flex-shrink: 0; }
+    .history-panel { background: var(--bg-panel); display: flex; flex-direction: column; }
+    
+    /* NEW: Transaction Scroll Wrapper */
+    .tx-scroll-wrapper {
+      max-height: 220px; /* Adjust this to make the box taller/shorter */
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+    .tx-scroll-wrapper::-webkit-scrollbar { width: 4px; }
+    .tx-scroll-wrapper::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .history-table { width: 100%; border-collapse: collapse; }
+    .history-table th { 
+      font-size: 9px; font-weight: 700; letter-spacing: 0.8px; 
+      text-transform: uppercase; color: var(--text-secondary); 
+      padding: 6px 14px; text-align: left; 
+      background: var(--bg-card); /* Keeps the background solid behind text */
+      position: sticky; /* Locks the header to the top! */
+      top: 0;
+      z-index: 10;
+      box-shadow: 0 1px 0 var(--border); /* Adds the bottom border line cleanly */
+    }
     .history-table td { font-family: var(--text-mono); font-size: 11px; padding: 5px 14px; border-bottom: 1px solid var(--border-subtle); color: var(--text-secondary); }
     .history-table tr:hover td { background: rgba(255,255,255,0.018); }
+    /* ... (leave the rest of your history-table styles as they are) ... */ .history-table tr:hover td { background: rgba(255,255,255,0.018); }
     .td-price-up { color: var(--green); font-weight: 600; }
     .td-price-down { color: var(--red); font-weight: 600; }
     .td-side-buy { color: var(--green); font-weight: 700; font-size: 10px; }

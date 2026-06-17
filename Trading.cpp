@@ -6,11 +6,12 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <algorithm>
 
 using json = nlohmann::json;
 
 int main() {
-    OrderBook orderBook{"RecordBook.csv"};
+    OrderBook orderBook{"RecordBook_Clean.csv"};
     Wallet wallet;
     std::string currentTime = orderBook.getEarliestTime(); 
     
@@ -51,6 +52,62 @@ int main() {
             try {
                 auto msg = json::parse(data);
 
+                // =========================================================================
+                // FIX: NEW MARKET CHANGING LOGIC
+                // =========================================================================
+                if (msg["action"] == "change_market") {
+                    std::string new_product = msg["product"];
+                    std::cout << "Market changed by UI to: " << new_product << std::endl;
+
+                    // Fetch the real bids and asks for this specific new product
+                    std::vector<OrderBookEntry> liveBids = orderBook.getOrders(OrderBookType::bid, new_product, currentTime);
+                    std::vector<OrderBookEntry> liveAsks = orderBook.getOrders(OrderBookType::ask, new_product, currentTime);
+                    
+                    if (!liveBids.empty() && !liveAsks.empty()) {
+                        std::sort(liveBids.begin(), liveBids.end(), OrderBookEntry::comapreByPriceDesc);
+                        std::sort(liveAsks.begin(), liveAsks.end(), OrderBookEntry::comapreByPriceAsc);
+                        
+                        // 1. Send price hints so the order form auto-fills correctly
+                        json priceHintMsg;
+                        priceHintMsg["type"]      = "price_hint";
+                        priceHintMsg["best_bid"]  = liveBids[0].price;
+                        priceHintMsg["best_ask"]  = liveAsks[0].price;
+                        priceHintMsg["product"]   = new_product;
+                        conn.send_text(priceHintMsg.dump());
+
+                        // 2. Send the REAL order book to replace the frontend loading screen
+                        json obMsg;
+                        obMsg["type"] = "orderbook";
+                        obMsg["asks"] = json::array();
+                        obMsg["bids"] = json::array();
+                        
+                        double cumA = 0;
+                        for(int i = 0; i < std::min((int)liveAsks.size(), 8); i++) {
+                            cumA += liveAsks[i].amount;
+                            // Format to strings to match UI expectations cleanly
+                            obMsg["asks"].push_back({
+                                {"price", std::to_string(liveAsks[i].price)}, 
+                                {"amount", std::to_string(liveAsks[i].amount)}, 
+                                {"total", std::to_string(cumA)}
+                            });
+                        }
+                        
+                        double cumB = 0;
+                        for(int i = 0; i < std::min((int)liveBids.size(), 8); i++) {
+                            cumB += liveBids[i].amount;
+                            obMsg["bids"].push_back({
+                                {"price", std::to_string(liveBids[i].price)}, 
+                                {"amount", std::to_string(liveBids[i].amount)}, 
+                                {"total", std::to_string(cumB)}
+                            });
+                        }
+                        conn.send_text(obMsg.dump());
+                    } else {
+                        std::cout << "Warning: No CSV data found for " << new_product << " at this time." << std::endl;
+                    }
+                }
+                // =========================================================================
+
                 if (msg["action"] == "submit_order") {
                     std::string side = msg["side"];
                     std::string product = msg["product"];
@@ -74,8 +131,40 @@ int main() {
                         OrderBookEntry entry{ price, amount, currentTime, product, type, "simuser" };
                         orderBook.insertOrder(entry);
                         std::cout << "SUCCESS: Inserted " << side << " order for " << amount << " " << product << " @ " << price << std::endl;
+
+                        json ackMsg;
+                        ackMsg["type"]          = "order_ack";
+                        ackMsg["status"]        = "Pending";
+                        ackMsg["side"]          = side;
+                        ackMsg["product"]       = product;
+                        ackMsg["price"]         = price;
+                        ackMsg["amount"]        = amount;
+                        conn.send_text(ackMsg.dump());
+
+                        std::vector<OrderBookEntry> liveBids = orderBook.getOrders(OrderBookType::bid, product, currentTime);
+                        std::vector<OrderBookEntry> liveAsks = orderBook.getOrders(OrderBookType::ask, product, currentTime);
+                        if (!liveBids.empty() && !liveAsks.empty()) {
+                            std::sort(liveBids.begin(), liveBids.end(), OrderBookEntry::comapreByPriceDesc);
+                            std::sort(liveAsks.begin(), liveAsks.end(), OrderBookEntry::comapreByPriceAsc);
+                            json priceHintMsg;
+                            priceHintMsg["type"]      = "price_hint";
+                            priceHintMsg["best_bid"]  = liveBids[0].price;
+                            priceHintMsg["best_ask"]  = liveAsks[0].price;
+                            priceHintMsg["product"]   = product;
+                            conn.send_text(priceHintMsg.dump());
+                        }
+
                     } else {
                         std::cout << "REJECTED: Insufficient wallet balance for order placement." << std::endl;
+
+                        json rejectMsg;
+                        rejectMsg["type"]    = "order_ack";
+                        rejectMsg["status"]  = "Rejected ✗";
+                        rejectMsg["side"]    = side;
+                        rejectMsg["product"] = product;
+                        rejectMsg["price"]   = price;
+                        rejectMsg["amount"]  = amount;
+                        conn.send_text(rejectMsg.dump());
                     }
                 }
                 
@@ -95,11 +184,9 @@ int main() {
                                 dynamicWalletUpdated = true;
                                 
                                 if (sale.orderType == OrderBookType::bidsale) {
-                                    // User Bought: Gain Base, Lose Quote
                                     wallet.insertCurrency(baseAsset, sale.amount);
                                     wallet.removeCurrency(quoteAsset, sale.amount * sale.price);
                                     
-                                    // Sync UI Variables safely
                                     if (baseAsset == "ETH") ui_eth += sale.amount;
                                     if (baseAsset == "BTC") ui_btc += sale.amount;
                                     if (baseAsset == "AVAX") ui_avax += sale.amount;
@@ -107,11 +194,9 @@ int main() {
                                     if (quoteAsset == "USDT") ui_usdt -= (sale.amount * sale.price);
                                     
                                 } else if (sale.orderType == OrderBookType::asksale) {
-                                    // User Sold: Lose Base, Gain Quote
                                     wallet.removeCurrency(baseAsset, sale.amount);
                                     wallet.insertCurrency(quoteAsset, sale.amount * sale.price);
                                     
-                                    // Sync UI Variables safely
                                     if (baseAsset == "ETH") ui_eth -= sale.amount;
                                     if (baseAsset == "BTC") ui_btc -= sale.amount;
                                     if (baseAsset == "AVAX") ui_avax -= sale.amount;
