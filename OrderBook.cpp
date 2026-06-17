@@ -132,7 +132,6 @@ vector<OrderBookEntry> OrderBook::matchAsksToBids(string product, string timesta
             {
                 OrderBookEntry sale{ask.price, 0, timestamp, product, OrderBookType::asksale};
                
-                // FIX: Use else-if so the second check cannot overwrite the first.
                 // If bid is simuser → bidsale (user bought). If ask is simuser → asksale (user sold).
                 // Both cannot be simuser simultaneously in a real sim, but guard it properly.
                 if (bid.username == "simuser") {
@@ -149,7 +148,7 @@ vector<OrderBookEntry> OrderBook::matchAsksToBids(string product, string timesta
                     sales.push_back(sale);
                     bid.amount = 0;
                     ask.amount = 0;
-                    break; // FIX 2: Ask is fully filled, break out to the next ask
+                    break; 
                 }
                 else if(bid.amount > ask.amount)
                 {
@@ -157,7 +156,7 @@ vector<OrderBookEntry> OrderBook::matchAsksToBids(string product, string timesta
                     sales.push_back(sale);
                     bid.amount = bid.amount - ask.amount;
                     ask.amount = 0;
-                    break; // FIX 2: Ask is fully filled, break out to the next ask
+                    break; 
                 }
                 else if(bid.amount < ask.amount && bid.amount > 0)
                 {
@@ -165,13 +164,12 @@ vector<OrderBookEntry> OrderBook::matchAsksToBids(string product, string timesta
                     sales.push_back(sale);
                     ask.amount = ask.amount - bid.amount;
                     bid.amount = 0;
-                    continue; // FIX 2: Bid is empty, keep processing the remaining ask amount
+                    continue; 
                 }
             }
         }
     }
 
-    // FIX 2 (Crucial): Sync the modified amounts back to the main orders vector
     for (OrderBookEntry& originalOrder : orders)
     {
         if (originalOrder.timestamp <= timestamp && originalOrder.product == product)
@@ -189,7 +187,6 @@ vector<OrderBookEntry> OrderBook::matchAsksToBids(string product, string timesta
         }
     }
 
-    // FIX 2 (Crucial): Clean up fully filled orders so they don't loop
     orders.erase(std::remove_if(orders.begin(), orders.end(), [](OrderBookEntry& e) {
         return e.amount <= 0;
     }), orders.end());
